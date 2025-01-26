@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GstWebRTC API</title>
+  <style>
+    body {
+      background-color: #3a3f44;
+      color: #c8c8c8;
+      font-family: 'Arial', sans-serif;
+    }
+
+    section {
+      border-top: 2px solid #272b30;
+    }
+
+    main {
+      border-bottom: 2px solid #272b30;
+      padding-bottom: 1em;
+    }
+
+    .button {
+      cursor: pointer;
+      border-radius: 10px;
+      user-select: none;
+    }
+
+    .button:disabled {
+      cursor: default;
+    }
+
+    button.button {
+      box-shadow: 4px 4px 14px 1px #272b30;
+      border: none;
+    }
+
+    .spinner {
+      display: inline-block;
+      position: absolute;
+      width: 80px;
+      height: 80px;
+    }
+
+    .spinner>div {
+      box-sizing: border-box;
+      display: block;
+      position: absolute;
+      width: 64px;
+      height: 64px;
+      margin: 8px;
+      border: 8px solid #fff;
+      border-radius: 50%;
+      animation: spinner 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+      border-color: #fff transparent transparent transparent;
+    }
+
+    .spinner div:nth-child(1) {
+      animation-delay: -0.45s;
+    }
+
+    .spinner div:nth-child(2) {
+      animation-delay: -0.3s;
+    }
+
+    .spinner div:nth-child(3) {
+      animation-delay: -0.15s;
+    }
+
+    @keyframes spinner {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+
+    video:focus-visible,
+    video:focus {
+      outline: none;
+    }
+
+    div.video,
+    div.offer-options,
+    div.request-box {
+      position: relative;
+      margin: 1em;
+      display: none;
+    }
+
+    div.request-box {
+      display: none;
+    }
+
+    #remote-streams>li.streaming.has-remote-control .request-box {
+      display: block;
+    }
+
+    div.video>div.fullscreen {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 2.6em;
+      height: 2.6em;
+    }
+
+    div.video>div.fullscreen>span {
+      position: absolute;
+      top: 0.3em;
+      right: 0.4em;
+      font-size: 1.5em;
+      font-weight: bolder;
+      cursor: pointer;
+      user-select: none;
+      display: none;
+      text-shadow: 1px 1px 4px #272b30;
+    }
+
+    div.video>video {
+      height: 500px;
+      background-color: #202020;
+      border-radius: 15px;
+      box-shadow: 4px 4px 14px 1px #272b30;
+    }
+
+    div.video>.spinner {
+      top: 80px;
+      left: 120px;
+    }
+
+    #remote-streams {
+      list-style: none;
+      padding-left: 1em;
+    }
+
+    #remote-streams>li .button::before {
+      content: "\2799";
+      padding-right: 0.2em;
+    }
+
+    #remote-streams>li.has-session .button::before {
+      content: "\2798";
+    }
+
+    #remote-streams>li div.video {
+      display: none;
+    }
+
+    #remote-streams>li.has-session div.video {
+      display: inline-block;
+    }
+
+    #remote-streams>li.streaming .spinner {
+      display: none;
+    }
+
+    #remote-streams>li.streaming>div.video>div.fullscreen:hover>span {
+      display: block;
+    }
+
+    #remote-streams .remote-control {
+      display: none;
+      position: absolute;
+      top: 0.2em;
+      left: 0.3em;
+      font-size: 1.8em;
+      font-weight: bolder;
+      animation: blink 1s ease-in-out infinite alternate;
+      text-shadow: 1px 1px 4px #272b30;
+    }
+
+    @keyframes blink {
+      to {
+        opacity: 0;
+      }
+    }
+
+    #remote-streams>li.streaming.has-remote-control .remote-control {
+      display: block;
+    }
+
+    #remote-streams>li.streaming.has-remote-control>div.video>video {
+      width: 640px;
+      height: 480px;
+    }
+  </style>
+  <script>
+    function initRemoteStreams(api) {
+      const remoteStreamsElement = document.getElementById("remote-streams");
+
+      const listener = {
+        producerAdded: function (producer) {
+          const producerId = producer.id;
+          if (!document.getElementById(producerId)) {
+            remoteStreamsElement.insertAdjacentHTML("beforeend",
+              `<li id="${producerId}">
+                                <div class="button">${producer.meta.name || producerId}</div>
+                                <div class="offer-options">
+                                  <textarea rows="5" cols="50" placeholder="offer options, empty to answer. For example:\n{\n  &quot;offerToReceiveAudio&quot;: 1\n  &quot;offerToReceiveVideo&quot;: 1\n}\n"></textarea>
+                                </div>
+                                <div class="request-box">
+                                  <textarea rows="4" cols="50" placeholder="JSON request to send over"></textarea>
+                                  <button disabled="disabled">Submit request</button>
+                                </div>
+                                <div class="video">
+                                    <div class="spinner">
+                                        <div></div>
+                                        <div></div>
+                                        <div></div>
+                                        <div></div>
+                                    </div>
+                                    <span class="remote-control">&#xA9;</span>
+                                    <video></video>
+                                    <div class="fullscreen"><span title="Toggle fullscreen">&#x25A2;</span></div>
+                                    <button class="start-recording">Start Recording</button>
+                                    <button class="stop-recording" disabled>Stop Recording</button>
+                                    <a class="download-link" style="display:none">Download Video</a>
+                                </div>
+                            </li>`);
+
+            const entryElement = document.getElementById(producerId);
+            const videoElement = entryElement.getElementsByTagName("video")[0];
+            const offerTextareaElement = entryElement.querySelector('.offer-options textarea');
+            const startRecordingButton = entryElement.querySelector('.start-recording');
+            const stopRecordingButton = entryElement.querySelector('.stop-recording');
+            const downloadLink = entryElement.querySelector('.download-link');
+
+            let mediaRecorder;
+            let recordedChunks = [];
+
+            // Iniciar la grabación cuando el usuario hace clic en "Start Recording"
+            startRecordingButton.addEventListener("click", () => {
+              if (videoElement.srcObject) {
+                const videoRecOptions = {
+                  mimeType: 'video/webm; codecs="vp8, opus"',
+                  videoBitsPerSecond: 5000000,  // Aumenta el bitrate (5 Mbps) para mejor calidad
+                };
+
+                mediaRecorder = new MediaRecorder(videoElement.srcObject, videoRecOptions);
+                mediaRecorder.ondataavailable = (event) => {
+                  recordedChunks.push(event.data);
+                  console.log("Data available", event.data); // Depuración
+                };
+
+                // Función que se llama al detener la grabación
+                mediaRecorder.onstop = () => {
+                  console.log("Recording stopped"); // Depuración
+                  const blob = new Blob(recordedChunks, { type: 'video/webm' }); // Usamos video/webm
+                  console.log("Blob created", blob); // Depuración
+
+                  const url = URL.createObjectURL(blob); // Crear una URL del blob
+                  downloadLink.href = url;
+                  downloadLink.download = 'remote_video.webm'; // El archivo descargado será remote_video.webm
+                  downloadLink.style.display = 'inline-block'; // Hacer visible el enlace
+
+                  // Agregar un evento de clic para forzar la descarga directamente
+                  downloadLink.addEventListener("click", (event) => {
+                    // Intentar forzar la descarga en algunos navegadores
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = 'remote_video.webm';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+
+                    // Liberar la URL del Blob después de usarla
+                    URL.revokeObjectURL(url);
+                  });
+                };
+
+
+                mediaRecorder.start();
+                console.log("Recording started"); // Depuración
+                startRecordingButton.disabled = true;
+                stopRecordingButton.disabled = false;
+              }
+            });
+
+            // Detener la grabación cuando el usuario hace clic en "Stop Recording"
+            stopRecordingButton.addEventListener("click", () => {
+              if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                mediaRecorder.stop();
+                console.log("Recording stopped by user"); // Depuración
+                startRecordingButton.disabled = false;
+                stopRecordingButton.disabled = true;
+              }
+            });
+
+            videoElement.addEventListener("playing", () => {
+              if (entryElement.classList.contains("has-session")) {
+                entryElement.classList.add("streaming");
+              }
+            });
+
+            entryElement.addEventListener("click", (event) => {
+              event.preventDefault();
+              if (!event.target.classList.contains("button")) {
+                return;
+              }
+
+              if (entryElement._consumerSession) {
+                entryElement._consumerSession.close();
+              } else {
+                let session = null;
+                if (offerTextareaElement.value == '') {
+                  session = api.createConsumerSession(producerId);
+                } else {
+                  try {
+                    let offerOptions = JSON.parse(offerTextareaElement.value);
+                    session = api.createConsumerSessionWithOfferOptions(producerId, offerOptions);
+                  } catch (ex) {
+                    console.error("Failed to parse offer options:", ex);
+                    return;
+                  }
+                }
+                if (session) {
+                  entryElement._consumerSession = session;
+
+                  session.mungeStereoHack = true;
+
+                  session.addEventListener("error", (event) => {
+                    if (entryElement._consumerSession === session) {
+                      console.error(event.message, event.error);
+                    }
+                  });
+
+                  session.addEventListener("closed", () => {
+                    if (entryElement._consumerSession === session) {
+                      videoElement.pause();
+                      videoElement.srcObject = null;
+                      entryElement.classList.remove("has-session", "streaming", "has-remote-control");
+                      delete entryElement._consumerSession;
+                    }
+                  });
+
+                  session.addEventListener("streamsChanged", () => {
+                    if (entryElement._consumerSession === session) {
+                      const streams = session.streams;
+                      if (streams.length > 0) {
+                        videoElement.srcObject = streams[0];
+                        videoElement.play().catch(() => { });
+                      }
+                    }
+                  });
+
+                  session.addEventListener("remoteControllerChanged", () => {
+                    if (entryElement._consumerSession === session) {
+                      const remoteController = session.remoteController;
+                      if (remoteController) {
+                        entryElement.classList.add("has-remote-control");
+                        submitRequestButtonElement.disabled = false;
+                        remoteController.attachVideoElement(videoElement);
+                        remoteController.addEventListener("info", (e) => {
+                          console.log("Received info message from producer: ", e.detail);
+                        });
+                      } else {
+                        entryElement.classList.remove("has-remote-control");
+                        submitRequestButtonElement.disabled = true;
+                      }
+                    }
+                  });
+
+                  entryElement.classList.add("has-session");
+                  session.connect();
+                }
+              }
+            });
+          }
+        },
+
+        producerRemoved: function (producer) {
+          const element = document.getElementById(producer.id);
+          if (element) {
+            if (element._consumerSession) {
+              element._consumerSession.close();
+            }
+
+            element.remove();
+          }
+        }
+      };
+
+      api.registerProducersListener(listener);
+      for (const producer of api.getAvailableProducers()) {
+        listener.producerAdded(producer);
+      }
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      document.addEventListener("click", (event) => {
+        if (event.target.matches("div.video>div.fullscreen:hover>span")) {
+          event.preventDefault();
+          event.target.parentNode.previousElementSibling.requestFullscreen();
+        }
+      });
+
+      const signalingProtocol = window.location.protocol.startsWith("https") ? "wss" : "ws";
+      const gstWebRTCConfig = {
+        meta: { name: `WebClient-${Date.now()}` },
+        signalingServerUrl: `${signalingProtocol}://${window.location.hostname}:8443`,
+      };
+
+      const api = new GstWebRTCAPI(gstWebRTCConfig);
+      initRemoteStreams(api);
+    });
+
+
+  </script>
+</head>
+
+<body>
+  <header>
+    <h1>HITS VIDEO CONTROL</h1>
+  </header>
+  <main>
+    <section>
+      <h1>Remote Streams</h1>
+      <ul id="remote-streams"></ul>
+    </section>
+  </main>
+</body>
+
+</html>
